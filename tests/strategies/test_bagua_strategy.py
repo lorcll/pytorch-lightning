@@ -33,6 +33,37 @@ class BoringModel4QAdam(BoringModel):
         return [optimizer], [lr_scheduler]
 
 
+class ManualBackwardModel(BoringModel):
+    def __init__(self):
+        super().__init__()
+        self.automatic_optimization = False
+
+    def training_step(self, batch, batch_idx):
+        output = self(batch)
+        opt = self.optimizers()[0]
+        opt.zero_grad()
+        loss = self.loss(batch, output)
+        self.manual_backward(loss)
+        opt.step()
+        return {"loss": loss}
+
+
+@RunIf(min_gpus=2, bagua=True)
+def test_bagua_manual(tmpdir):
+    model = ManualBackwardModel()
+    trainer = Trainer(
+        default_root_dir=tmpdir,
+        fast_dev_run=1,
+        strategy="bagua",
+        accelerator="gpu",
+        devices=1,
+    )
+    trainer.fit(model)
+
+    for param in model.parameters():
+        assert torch.norm(param) < 3
+
+
 @RunIf(min_gpus=1, bagua=True)
 def test_bagua_default(tmpdir):
     trainer = Trainer(
